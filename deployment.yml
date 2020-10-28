@@ -1,0 +1,58 @@
+apiVersion: apps/v1beta1
+kind: Deployment
+metadata:
+  name: self-hosted-runner
+spec:
+  replicas: 2
+  template:
+    metadata:
+      labels:
+        app: self-hosted-runner
+    spec:
+      containers:
+      - name: self-hosted-runner
+        image: gcr.io/PROJECT_ID/IMAGE:TAG
+        imagePullPolicy: Always
+        env:
+          - name: GITHUB_REPO
+            valueFrom:
+              secretKeyRef:
+                name: self-hosted-runner-creds
+                key: GITHUB_REPO
+          - name: TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: self-hosted-runner-creds
+                key: TOKEN
+          - name: DOCKER_HOST
+            value: 127.0.0.1
+          - name: DOCKER_BUILDKIT
+            value: "1"
+        lifecycle:
+          preStop:
+            exec:
+              command:
+                [
+              '/bin/bash',
+              '-c',
+              'RUNNER_ALLOW_RUNASROOT=1 ./config.sh remove --token $(curl -sS --data "" -H "Authorization: Bearer $TOKEN" https://api.github.com/repos/$GITHUB_REPO/actions/runners/remove-token | jq -r .token)'
+                ]
+        resources:
+            limits:
+              memory: "256Mi"
+              cpu: "100m"
+      # Docker-in-Docker not recommended for production
+      - name: dind
+        image: docker:18.09-dind
+        resources:
+            limits:
+              memory: "256Mi"
+              cpu: "100m"
+        securityContext:
+          privileged: true
+        volumeMounts:
+          - name: dind-storage
+            mountPath: /var/lib/docker
+      volumes:
+        - name: dind-storage
+          emptyDir: {}
